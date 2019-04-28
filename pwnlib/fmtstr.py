@@ -154,28 +154,70 @@ def fmtstr_payload(offset, writes, numbwritten=0, write_size='byte'):
     number, step, mask, formatz, decalage = config[context.bits][write_size]
 
     # add wheres
-    payload = ""
-    for where, what in writes.items():
-        for i in range(0, number*step, step):
-            payload += pack(where+i)
+    fmt = ""
+    if reversed:
+        fmtCount = 0
+        for where, what in writes.items():
+            for i in range(0, number):
+                current = what & mask
+                if numbwritten & mask <= current:
+                    to_add = current - (numbwritten & mask)
+                else:
+                    to_add = (current | (mask+1)) - (numbwritten & mask)
 
-    numbwritten += len(payload)
-    fmtCount = 0
-    for where, what in writes.items():
-        for i in range(0, number):
-            current = what & mask
-            if numbwritten & mask <= current:
-                to_add = current - (numbwritten & mask)
+                if to_add != 0:
+                    fmt += "%{}c".format(to_add)
+                    fmt += "%{}${}n"
+
+                    numbwritten += to_add
+                    what >>= decalage
+                    fmtCount += 1
+        new_fmt=fmt
+        search_time=0
+        while True:
+            new_offset = offset + (len(new_fmt) + number - 1) // number
+            format_arg_list=[]
+            for i in range(0, fmtCount):
+                format_arg_list.append(new_offset + i)
+                format_arg_list.append(formatz)
+            new_fmt=fmt.format(*format_arg_list)
+            if new_offset == offset + (len(new_fmt) + number - 1) // number:
+                fmt = new_fmt
+                break
             else:
-                to_add = (current | (mask+1)) - (numbwritten & mask)
+                search_time += 1
+                if search_time > max_search_time:
+                    raise Exception("Fmt payload generate failed, max retry time reached!")
+        padding_len = number - len(fmt) % number
+        padding = randoms(padding_len)
+        addresses=""
+        for where in writes:
+            for i in range(0, number*step, step):
+                addresses += pack(where+i)
+        payload = fmt + padding + addresses
 
-            if to_add != 0:
-                payload += "%{}c".format(to_add)
-            payload += "%{}${}n".format(offset + fmtCount, formatz)
+    else:
+        for where, what in writes.items():
+            for i in range(0, number*step, step):
+                payload += pack(where+i)
 
-            numbwritten += to_add
-            what >>= decalage
-            fmtCount += 1
+        numbwritten += len(payload)
+        fmtCount = 0
+        for where, what in writes.items():
+            for i in range(0, number):
+                current = what & mask
+                if numbwritten & mask <= current:
+                    to_add = current - (numbwritten & mask)
+                else:
+                    to_add = (current | (mask+1)) - (numbwritten & mask)
+
+                if to_add != 0:
+                    payload += "%{}c".format(to_add)
+                payload += "%{}${}n".format(offset + fmtCount, formatz)
+
+                numbwritten += to_add
+                what >>= decalage
+                fmtCount += 1
 
     return payload
 
